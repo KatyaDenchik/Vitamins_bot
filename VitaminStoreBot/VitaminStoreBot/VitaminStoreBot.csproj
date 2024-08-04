@@ -7,4 +7,24 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Telegram.Bot" Version="19.0.0" />
+    <PackageReference Include="Telegram.Bots.Extensions.Polling" Version="5.9.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="ProductPhoto\HEALTH KIT.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="ProductPhoto\Калій ULTRA.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="ProductPhoto\Магній 500 PRO.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="WelcomePhoto\img-1.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
