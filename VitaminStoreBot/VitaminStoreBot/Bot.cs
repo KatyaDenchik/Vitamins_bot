@@ -20,10 +20,10 @@ namespace VitaminStoreBot
         private readonly List<Product> _products;
         private readonly Dictionary<long, Dictionary<string, int>> _carts;
         private readonly Dictionary<long, Order> _pendingOrders;
-        private readonly long _adminChatId = 906821739; // ID администратора
         private readonly Dictionary<long, int> _cartHeaderMessageId;
         private readonly Dictionary<long, Dictionary<string, int>> _cartMessageIds;
         private readonly Dictionary<long, int> _totalMessageId;
+        private readonly Dictionary<long, AdminRegistration> _pendingAdminRegistrations;
 
         public Bot(BotConfig config)
         {
@@ -35,6 +35,7 @@ namespace VitaminStoreBot
             _cartHeaderMessageId = new Dictionary<long, int>();
             _cartMessageIds = new Dictionary<long, Dictionary<string, int>>();
             _totalMessageId = new Dictionary<long, int>();
+            _pendingAdminRegistrations = new Dictionary<long, AdminRegistration>();
         }
 
         public void Start()
@@ -42,7 +43,8 @@ namespace VitaminStoreBot
             var cts = new CancellationTokenSource();
             var receiverOptions = new ReceiverOptions
             {
-                AllowedUpdates = Array.Empty<UpdateType>()
+                AllowedUpdates = Array.Empty<UpdateType>(),
+                ThrowPendingUpdates = true
             };
 
             _botClient.StartReceiving(HandleUpdateAsync, HandleErrorAsync, receiverOptions, cts.Token);
@@ -68,39 +70,80 @@ namespace VitaminStoreBot
         private async Task HandleMessage(ITelegramBotClient client, Update update, Message message)
         {
             var chatId = update.Message.Chat.Id;
-            if (message.Text == "/start")
+            var text = message.Text;
+
+            if (_pendingAdminRegistrations.ContainsKey(chatId))
+            {
+                await RegisterAdmin(chatId, text);
+                return;
+            }
+
+            if (text == "/start")
             {
                 await SendWelcomeMessageAsync(chatId);
                 Console.WriteLine($"Chat ID: {chatId}");
             }
+            else if (text == _config.SecretWord)
+            {
+                _pendingAdminRegistrations[chatId] = new AdminRegistration();
+                await _botClient.SendTextMessageAsync(chatId, "Введите ваше имя:");
+            }
             else if (_pendingOrders.ContainsKey(chatId))
             {
-                var order = _pendingOrders[chatId];
-                if (string.IsNullOrEmpty(order.CustomerName))
-                {
-                    order.CustomerName = message.Text;
-                    await _botClient.SendTextMessageAsync(chatId, "Введіть ваше прізвище:");
-                }
-                else if (string.IsNullOrEmpty(order.CustomerSurname))
-                {
-                    order.CustomerSurname = message.Text;
-                    await _botClient.SendTextMessageAsync(chatId, "Введіть ваше по-батькові:");
-                }
-                else if (string.IsNullOrEmpty(order.CustomerPatronymic))
-                {
-                    order.CustomerPatronymic = message.Text;
-                    await _botClient.SendTextMessageAsync(chatId, "Виберіть вид оплати:", replyMarkup: GetPaymentOptionsKeyboard());
-                }
-                else if (string.IsNullOrEmpty(order.PaymentMethod))
-                {
-                    order.PaymentMethod = message.Text;
-                    await _botClient.SendTextMessageAsync(chatId, "Введіть адресу доставки:");
-                }
-                else if (string.IsNullOrEmpty(order.DeliveryAddress))
-                {
-                    order.DeliveryAddress = message.Text;
-                    await FinalizeOrder(chatId);
-                }
+                await ProcessOrder(chatId, text);
+            }
+        }
+
+        private async Task RegisterAdmin(long chatId, string text)
+        {
+            var registration = _pendingAdminRegistrations[chatId];
+
+            if (string.IsNullOrEmpty(registration.FirstName))
+            {
+                registration.FirstName = text;
+                await _botClient.SendTextMessageAsync(chatId, "Введите вашу фамилию:");
+            }
+            else
+            {
+                registration.LastName = text;
+                _config.SaveAdmin(chatId, registration.FirstName, registration.LastName);
+                await _botClient.SendTextMessageAsync(chatId, "Вы успешно зарегистрированы как администратор.");
+                _pendingAdminRegistrations.Remove(chatId);
+            }
+        }
+
+        private async Task ProcessOrder(long chatId, string text)
+        {
+            var order = _pendingOrders[chatId];
+            if (string.IsNullOrEmpty(order.CustomerName))
+            {
+                order.CustomerName = text;
+                await _botClient.SendTextMessageAsync(chatId, "Введите вашу фамилию:");
+            }
+            else if (string.IsNullOrEmpty(order.CustomerSurname))
+            {
+                order.CustomerSurname = text;
+                await _botClient.SendTextMessageAsync(chatId, "Введите ваше отчество:");
+            }
+            else if (string.IsNullOrEmpty(order.CustomerPatronymic))
+            {
+                order.CustomerPatronymic = text;
+                await _botClient.SendTextMessageAsync(chatId, "Введите ваш номер телефона:");
+            }
+            else if (string.IsNullOrEmpty(order.CustomerPhone))
+            {
+                order.CustomerPhone = text;
+                await _botClient.SendTextMessageAsync(chatId, "Выберите способ оплаты:", replyMarkup: GetPaymentOptionsKeyboard());
+            }
+            else if (string.IsNullOrEmpty(order.PaymentMethod))
+            {
+                order.PaymentMethod = text;
+                await _botClient.SendTextMessageAsync(chatId, "Введите адрес доставки:");
+            }
+            else if (string.IsNullOrEmpty(order.DeliveryAddress))
+            {
+                order.DeliveryAddress = text;
+                await FinalizeOrder(chatId);
             }
         }
 
@@ -349,89 +392,99 @@ namespace VitaminStoreBot
 
         private async Task ShowCartAsync(long chatId)
         {
-            if (_carts.ContainsKey(chatId) && _carts[chatId].Any())
-            {
-                if (!_cartMessageIds.ContainsKey(chatId))
+                if (_carts.ContainsKey(chatId) && _carts[chatId].Any())
                 {
-                    _cartMessageIds[chatId] = new Dictionary<string, int>();
-                }
-
-                // Обновление сообщения заголовка корзины
-                if (_cartHeaderMessageId.ContainsKey(chatId))
-                {
-                    await UpdateMessageAsync(chatId, _cartHeaderMessageId[chatId], "*Ваш кошик:*", parseMode: ParseMode.Markdown);
-                }
-                else
-                {
-                    var cartHeaderMessage = await _botClient.SendTextMessageAsync(chatId, "*Ваш кошик:*", parseMode: ParseMode.Markdown);
-                    _cartHeaderMessageId[chatId] = cartHeaderMessage.MessageId;
-                }
-
-                // Обновление сообщений для каждого товара в корзине
-                foreach (var item in _carts[chatId])
-                {
-                    var product = _products.FirstOrDefault(p => p.Name == item.Key);
-                    if (product != null)
+                    if (!_cartMessageIds.ContainsKey(chatId))
                     {
-                        var message = $"*{item.Key}*\n" +
-                            $"Кількість: {item.Value}\n" +
-                            $"Ціна за одиницю: {product.Price}\n" +
-                            $"Ціна всього: {product.Price * item.Value}";
+                        _cartMessageIds[chatId] = new Dictionary<string, int>();
+                    }
 
-                        var keyboard = new InlineKeyboardMarkup(new[]
-                        {
-                            InlineKeyboardButton.WithCallbackData("➕", $"Збільшити:{item.Key}"),
-                            InlineKeyboardButton.WithCallbackData("➖", $"Зменшити:{item.Key}"),
-                            InlineKeyboardButton.WithCallbackData("🗑", $"Видалити:{item.Key}")
-                        });
+                    // Обновление сообщения заголовка корзины
+                    if (_cartHeaderMessageId.ContainsKey(chatId))
+                    {
+                        await UpdateMessageAsync(chatId, _cartHeaderMessageId[chatId], "*Ваш кошик:*", parseMode: ParseMode.Markdown);
+                    }
+                    else
+                    {
+                        var cartHeaderMessage = await _botClient.SendTextMessageAsync(chatId, "*Ваш кошик:*", parseMode: ParseMode.Markdown);
+                        _cartHeaderMessageId[chatId] = cartHeaderMessage.MessageId;
+                    }
 
-                        if (_cartMessageIds[chatId].ContainsKey(item.Key))
+                    // Обновление сообщений для каждого товара в корзине
+                    foreach (var item in _carts[chatId])
+                    {
+                        var product = _products.FirstOrDefault(p => p.Name == item.Key);
+                        if (product != null)
                         {
-                            var messageId = _cartMessageIds[chatId][item.Key];
-                            await UpdateMessageAsync(chatId, messageId, message, parseMode: ParseMode.Markdown, replyMarkup: keyboard);
-                        }
-                        else
-                        {
-                            var sentMessage = await _botClient.SendTextMessageAsync(chatId, message, parseMode: ParseMode.Markdown, replyMarkup: keyboard);
-                            _cartMessageIds[chatId][item.Key] = sentMessage.MessageId;
+                            var message = $"*{item.Key}*\n" +
+                                          $"Кількість: {item.Value}\n" +
+                                          $"Ціна за одиницю: {product.Price}\n" +
+                                          $"Ціна всього: {product.Price * item.Value}";
+
+                            var keyboard = new InlineKeyboardMarkup(new[]
+                            {
+                    InlineKeyboardButton.WithCallbackData("➕", $"Збільшити:{item.Key}"),
+                    InlineKeyboardButton.WithCallbackData("➖", $"Зменшити:{item.Key}"),
+                    InlineKeyboardButton.WithCallbackData("🗑", $"Видалити:{item.Key}")
+                });
+
+                            if (_cartMessageIds[chatId].ContainsKey(item.Key))
+                            {
+                                var messageId = _cartMessageIds[chatId][item.Key];
+                                await UpdateMessageAsync(chatId, messageId, message, parseMode: ParseMode.Markdown, replyMarkup: keyboard);
+                            }
+                            else
+                            {
+                                var sentMessage = await _botClient.SendTextMessageAsync(chatId, message, parseMode: ParseMode.Markdown, replyMarkup: keyboard);
+                                _cartMessageIds[chatId][item.Key] = sentMessage.MessageId;
+                            }
                         }
                     }
-                }
 
-                var total = _carts[chatId].Sum(item => _products.FirstOrDefault(p => p.Name == item.Key)?.Price * item.Value);
-                var totalMessage = $"*В сумі: {total} грн*";
+                    var total = _carts[chatId].Sum(item => _products.FirstOrDefault(p => p.Name == item.Key)?.Price * item.Value);
+                    var totalMessage = $"*В сумі: {total} грн*";
 
-                if (_totalMessageId.ContainsKey(chatId))
-                {
-                    await UpdateMessageAsync(chatId, _totalMessageId[chatId], totalMessage, parseMode: ParseMode.Markdown, replyMarkup: new InlineKeyboardMarkup(new[]
+                    if (_totalMessageId.ContainsKey(chatId))
                     {
-                        InlineKeyboardButton.WithCallbackData("Оформити замовлення", "Оформити замовлення")
-                    }));
+                        await UpdateMessageAsync(chatId, _totalMessageId[chatId], totalMessage, parseMode: ParseMode.Markdown, replyMarkup: new InlineKeyboardMarkup(new[]
+                        {
+                InlineKeyboardButton.WithCallbackData("Оформити замовлення", "Оформити замовлення")
+            }));
+                    }
+                    else
+                    {
+                        var totalSentMessage = await _botClient.SendTextMessageAsync(chatId, totalMessage, parseMode: ParseMode.Markdown, replyMarkup: new InlineKeyboardMarkup(new[]
+                        {
+                InlineKeyboardButton.WithCallbackData("Оформити замовлення", "Оформити замовлення")
+            }));
+                        _totalMessageId[chatId] = totalSentMessage.MessageId;
+                    }
                 }
                 else
                 {
-                    var totalSentMessage = await _botClient.SendTextMessageAsync(chatId, totalMessage, parseMode: ParseMode.Markdown, replyMarkup: new InlineKeyboardMarkup(new[]
+                    await _botClient.SendTextMessageAsync(chatId, "Ваш кошик порожній.");
+                    if (_cartHeaderMessageId.ContainsKey(chatId))
                     {
-                        InlineKeyboardButton.WithCallbackData("Оформити замовлення", "Оформити замовлення")
-                    }));
-                    _totalMessageId[chatId] = totalSentMessage.MessageId;
-                }
-            }
-            else
-            {
-                if (_cartHeaderMessageId.ContainsKey(chatId))
-                {
-                    await _botClient.EditMessageTextAsync(chatId, _cartHeaderMessageId[chatId], "Ваш кошик порожній.");
-                    _cartHeaderMessageId.Remove(chatId);
-                }
+                        await _botClient.DeleteMessageAsync(chatId, _cartHeaderMessageId[chatId]);
+                        _cartHeaderMessageId.Remove(chatId);
+                    }
 
-                if (_totalMessageId.ContainsKey(chatId))
-                {
-                    await _botClient.DeleteMessageAsync(chatId, _totalMessageId[chatId]);
-                    _totalMessageId.Remove(chatId);
+                    if (_totalMessageId.ContainsKey(chatId))
+                    {
+                        await _botClient.DeleteMessageAsync(chatId, _totalMessageId[chatId]);
+                        _totalMessageId.Remove(chatId);
+                    }
+
+                    if (_cartMessageIds.ContainsKey(chatId))
+                    {
+                        foreach (var messageId in _cartMessageIds[chatId].Values)
+                        {
+                            await _botClient.DeleteMessageAsync(chatId, messageId);
+                        }
+                        _cartMessageIds.Remove(chatId);
+                    }
                 }
             }
-        }
 
         private async Task UpdateMessageAsync(long chatId, int messageId, string text, ParseMode parseMode = ParseMode.Markdown, InlineKeyboardMarkup replyMarkup = null)
         {
@@ -478,6 +531,7 @@ namespace VitaminStoreBot
                 order.CustomerName,
                 order.CustomerSurname,
                 order.CustomerPatronymic,
+                order.CustomerPhone,
                 order.PaymentMethod,
                 order.DeliveryAddress,
                 Cart = order.Cart.Select(item =>
@@ -499,7 +553,8 @@ namespace VitaminStoreBot
             System.IO.File.WriteAllText(jsonFileName, json);
 
             var adminMessage = $"Нове замовлення від {order.CustomerName} {order.CustomerSurname} {order.CustomerPatronymic}\n" +
-                               $"Вид оплати: {order.PaymentMethod}\nАдреса доставки: {order.DeliveryAddress}\n\n";
+                              $"Телефон: {order.CustomerPhone}\n" +
+                              $"Вид оплати: {order.PaymentMethod}\nАдреса доставки: {order.DeliveryAddress}\n\n";
 
             foreach (var item in order.Cart)
             {
@@ -512,7 +567,11 @@ namespace VitaminStoreBot
 
             adminMessage += $"\nЗагальна сума: {order.Cart.Sum(item => _products.FirstOrDefault(p => p.Name == item.Key)?.Price * item.Value)} грн";
 
-            await _botClient.SendTextMessageAsync(_adminChatId, adminMessage);
+            foreach (var admin in _config.Admins)
+            {
+                await _botClient.SendTextMessageAsync(admin.Key, adminMessage);
+            }
+
             await _botClient.SendTextMessageAsync(chatId, "Ваше замовлення було оформлено!");
 
             _pendingOrders.Remove(chatId);

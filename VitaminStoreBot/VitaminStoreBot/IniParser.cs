@@ -10,59 +10,102 @@ namespace VitaminStoreBot
 {
     public class IniParser
     {
-        private string path;
-        private string DllName = Assembly.GetExecutingAssembly().GetName().Name;
+        private readonly string _iniFilePath;
+        private readonly Dictionary<string, Dictionary<string, string>> _data;
 
-        [DllImport("kernel32", CharSet = CharSet.Unicode)]
-        static extern long WritePrivateProfileString(string section, string key, string value, string filePath);
-
-        [DllImport("kernel32", CharSet = CharSet.Unicode)]
-        static extern int GetPrivateProfileString(string section, string key, string defaultValie, StringBuilder RetVal, int Size, string FilePath);
-
-        internal IniParser(string iniPath = null)
+        public IniParser(string iniFilePath)
         {
-            path = new FileInfo(iniPath ?? DllName + ".ini").FullName;
+            _iniFilePath = iniFilePath;
+            _data = new Dictionary<string, Dictionary<string, string>>();
+
+            LoadIniFile();
         }
 
-        public string Read(string key, string section = null, object defultValue = null)
+        private void LoadIniFile()
         {
-            if (defultValue is not null && !KeyExists(key, section))
+            if (!File.Exists(_iniFilePath))
             {
-                Write(key, section, defultValue);
+                return;
             }
 
-            var RetVal = new StringBuilder(255);
-            GetPrivateProfileString(section ?? DllName, key, "", RetVal, 255, path);
-            return RetVal.ToString();
-        }
-        public void Write(string key, object value)
-        {
-            Write(key, DllName, value.ToString());
+            string[] lines = File.ReadAllLines(_iniFilePath);
+            string currentSection = string.Empty;
+
+            foreach (string line in lines)
+            {
+                if (string.IsNullOrWhiteSpace(line) || line.StartsWith(";"))
+                {
+                    continue;
+                }
+
+                if (line.StartsWith("[") && line.EndsWith("]"))
+                {
+                    currentSection = line.Trim('[', ']');
+                    if (!_data.ContainsKey(currentSection))
+                    {
+                        _data[currentSection] = new Dictionary<string, string>();
+                    }
+                }
+                else if (!string.IsNullOrEmpty(currentSection))
+                {
+                    string[] kvp = line.Split(new char[] { '=' }, 2);
+                    if (kvp.Length == 2)
+                    {
+                        _data[currentSection][kvp[0].Trim()] = kvp[1].Trim();
+                    }
+                }
+            }
         }
 
-        public void Write(string key, string section, object value)
+        public string Read(string section, string key, string defaultValue = "")
         {
-            Write(key, section, value.ToString());
+            if (_data.ContainsKey(section) && _data[section].ContainsKey(key))
+            {
+                return _data[section][key];
+            }
+
+            return defaultValue;
         }
 
-        public void Write(string key, string section, string value)
+        public void Write(string section, string key, string value)
         {
-            WritePrivateProfileString(section ?? DllName, key, value, path);
+            if (!_data.ContainsKey(section))
+            {
+                _data[section] = new Dictionary<string, string>();
+            }
+
+            _data[section][key] = value;
+            SaveIniFile();
         }
 
-        public void DeleteKey(string key, string section = null)
+        private void SaveIniFile()
         {
-            Write(key, null, section ?? DllName);
+            List<string> lines = new List<string>();
+
+            foreach (var section in _data)
+            {
+                lines.Add($"[{section.Key}]");
+
+                foreach (var kvp in section.Value)
+                {
+                    lines.Add($"{kvp.Key} = {kvp.Value}");
+                }
+
+                lines.Add(string.Empty);
+            }
+
+            File.WriteAllLines(_iniFilePath, lines);
         }
 
-        public void DeleteSection(string section = null)
+        public Dictionary<string, string> GetSection(string section)
         {
-            Write(null, null, section ?? DllName);
-        }
+            if (_data.ContainsKey(section))
+            {
+                return _data[section];
+            }
 
-        public bool KeyExists(string key, string section = null)
-        {
-            return Read(key, section).Length > 0;
+            return new Dictionary<string, string>();
         }
     }
+
 }

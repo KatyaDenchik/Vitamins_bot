@@ -12,6 +12,7 @@ namespace VitaminStoreBot
         public string CustomerName { get; set; }
         public string CustomerSurname { get; set; }
         public string CustomerPatronymic { get; set; }
+        public string CustomerPhone { get; set; }
         public string PaymentMethod { get; set; }
         public string DeliveryAddress { get; set; }
         public Dictionary<string, int> Cart { get; set; }
