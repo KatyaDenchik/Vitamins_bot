@@ -157,7 +157,7 @@ namespace VitaminStoreBot
             }
             if (callbackQuery.Data.Contains("Кошик"))
             {
-                await ShowCartAsync(chatId);
+                await ShowCartAsync(chatId, false);
             }
             if (callbackQuery.Data.Contains("Назад до товарів"))
             {
@@ -390,7 +390,7 @@ namespace VitaminStoreBot
             await _botClient.SendTextMessageAsync(chatId, "Оберіть товар:", replyMarkup: keyboard);
         }
 
-        private async Task ShowCartAsync(long chatId)
+        private async Task ShowCartAsync(long chatId, bool needUpdate = true)
         {
                 if (_carts.ContainsKey(chatId) && _carts[chatId].Any())
                 {
@@ -400,7 +400,7 @@ namespace VitaminStoreBot
                     }
 
                     // Обновление сообщения заголовка корзины
-                    if (_cartHeaderMessageId.ContainsKey(chatId))
+                    if (_cartHeaderMessageId.ContainsKey(chatId) && needUpdate)
                     {
                         await UpdateMessageAsync(chatId, _cartHeaderMessageId[chatId], "*Ваш кошик:*", parseMode: ParseMode.Markdown);
                     }
@@ -428,7 +428,7 @@ namespace VitaminStoreBot
                     InlineKeyboardButton.WithCallbackData("🗑", $"Видалити:{item.Key}")
                 });
 
-                            if (_cartMessageIds[chatId].ContainsKey(item.Key))
+                            if (_cartMessageIds[chatId].ContainsKey(item.Key) && needUpdate)
                             {
                                 var messageId = _cartMessageIds[chatId][item.Key];
                                 await UpdateMessageAsync(chatId, messageId, message, parseMode: ParseMode.Markdown, replyMarkup: keyboard);
@@ -444,7 +444,7 @@ namespace VitaminStoreBot
                     var total = _carts[chatId].Sum(item => _products.FirstOrDefault(p => p.Name == item.Key)?.Price * item.Value);
                     var totalMessage = $"*В сумі: {total} грн*";
 
-                    if (_totalMessageId.ContainsKey(chatId))
+                    if (_totalMessageId.ContainsKey(chatId) && needUpdate)
                     {
                         await UpdateMessageAsync(chatId, _totalMessageId[chatId], totalMessage, parseMode: ParseMode.Markdown, replyMarkup: new InlineKeyboardMarkup(new[]
                         {
