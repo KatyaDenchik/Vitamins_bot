@@ -10,101 +10,56 @@ namespace VitaminStoreBot
 {
     public class IniParser
     {
-        private readonly string _iniFilePath;
-        private readonly Dictionary<string, Dictionary<string, string>> _data;
+        private string path;
+        private string DllName = Assembly.GetExecutingAssembly().GetName().Name;
 
-        public IniParser(string iniFilePath)
+        [DllImport("kernel32", CharSet = CharSet.Unicode)]
+        static extern long WritePrivateProfileString(string section, string key, string value, string filePath);
+
+        [DllImport("kernel32", CharSet = CharSet.Unicode)]
+        static extern int GetPrivateProfileString(string section, string key, string defaultValie, StringBuilder RetVal, int Size, string FilePath);
+
+        public IniParser(string iniPath = null)
         {
-            _iniFilePath = iniFilePath;
-            _data = new Dictionary<string, Dictionary<string, string>>();
-
-            LoadIniFile();
+            path = new FileInfo(iniPath ?? DllName + ".ini").FullName;
         }
 
-        private void LoadIniFile()
+        public string Read(string key, string section = null, object defultValue = null)
         {
-            if (!File.Exists(_iniFilePath))
+            if (defultValue is not null && !KeyExists(key, section))
             {
-                return;
+                Write(key, defultValue, section);
             }
 
-            string[] lines = File.ReadAllLines(_iniFilePath);
-            string currentSection = string.Empty;
-
-            foreach (string line in lines)
-            {
-                if (string.IsNullOrWhiteSpace(line) || line.StartsWith(";"))
-                {
-                    continue;
-                }
-
-                if (line.StartsWith("[") && line.EndsWith("]"))
-                {
-                    currentSection = line.Trim('[', ']');
-                    if (!_data.ContainsKey(currentSection))
-                    {
-                        _data[currentSection] = new Dictionary<string, string>();
-                    }
-                }
-                else if (!string.IsNullOrEmpty(currentSection))
-                {
-                    string[] kvp = line.Split(new char[] { '=' }, 2);
-                    if (kvp.Length == 2)
-                    {
-                        _data[currentSection][kvp[0].Trim()] = kvp[1].Trim();
-                    }
-                }
-            }
+            var RetVal = new StringBuilder(255);
+            GetPrivateProfileString(section ?? DllName, key, "", RetVal, 255, path);
+            return RetVal.ToString();
         }
 
-        public string Read(string section, string key, string defaultValue = "")
-        {
-            if (_data.ContainsKey(section) && _data[section].ContainsKey(key))
-            {
-                return _data[section][key];
-            }
 
-            return defaultValue;
+        public void Write(string key, object value, string section = null)
+        {
+            Write(key, value.ToString(), section ?? DllName);
         }
 
-        public void Write(string section, string key, string value)
+        public void Write(string key, string value, string section = null)
         {
-            if (!_data.ContainsKey(section))
-            {
-                _data[section] = new Dictionary<string, string>();
-            }
-
-            _data[section][key] = value;
-            SaveIniFile();
+            WritePrivateProfileString(section ?? DllName, key, value, path);
         }
 
-        private void SaveIniFile()
+        public void DeleteKey(string key, string section = null)
         {
-            List<string> lines = new List<string>();
-
-            foreach (var section in _data)
-            {
-                lines.Add($"[{section.Key}]");
-
-                foreach (var kvp in section.Value)
-                {
-                    lines.Add($"{kvp.Key} = {kvp.Value}");
-                }
-
-                lines.Add(string.Empty);
-            }
-
-            File.WriteAllLines(_iniFilePath, lines);
+            Write(key, null, section ?? DllName);
         }
 
-        public Dictionary<string, string> GetSection(string section)
+        public void DeleteSection(string section = null)
         {
-            if (_data.ContainsKey(section))
-            {
-                return _data[section];
-            }
+            Write(null, null, section ?? DllName);
+        }
 
-            return new Dictionary<string, string>();
+        public bool KeyExists(string key, string section = null)
+        {
+            return Read(key, section).Length > 0;
         }
     }
 

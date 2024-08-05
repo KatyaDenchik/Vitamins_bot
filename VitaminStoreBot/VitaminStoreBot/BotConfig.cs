@@ -26,37 +26,38 @@ namespace VitaminStoreBot
 
         public string PathToExecutableFolder { get; init; }
         public IniParser IniConfig { get; init; }
-        public Dictionary<long, (string FirstName, string LastName)> Admins { get; private set; }
+        public List<long> Admins { get; private set; } = new();
 
         public BotConfig()
         {
             PathToExecutableFolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             ConfigFilePath = Path.Combine(PathToExecutableFolder, "Config.ini");
             IniConfig = new IniParser(ConfigFilePath);
-            token = IniConfig.Read("Bot", "Token", "7364374816:AAFLeLjDxyjSMwoCObtOWfr8FHlgK08JNg8");
-            SecretWord = IniConfig.Read("Bot", "SecretWord", "gyr3061hebz]7wv01r");
+            token = IniConfig.Read("Token", defultValue: "7364374816:AAFLeLjDxyjSMwoCObtOWfr8FHlgK08JNg8");
+            SecretWord = IniConfig.Read("SecretWord", defultValue: "gyr3061hebz]7wv01r");
 
             LoadAdmins();
         }
 
         private void LoadAdmins()
         {
-            Admins = new Dictionary<long, (string FirstName, string LastName)>();
-            var adminSection = IniConfig.GetSection("Admins");
-            foreach (var key in adminSection.Keys)
+            var admins = IniConfig.Read("Admins");
+            foreach (var admin in admins.Replace(" ", "").Split(';'))
             {
-                var parts = adminSection[key].Split(':');
-                if (parts.Length == 3 && long.TryParse(parts[0], out long chatId))
+                if (string.IsNullOrEmpty(admin))
                 {
-                    Admins[chatId] = (parts[1], parts[2]);
+                    continue;
                 }
+                Admins.Add(long.Parse(admin));
             }
         }
 
-        public void SaveAdmin(long chatId, string firstName, string lastName)
+        public void SaveAdmin(long chatId)
         {
-            Admins[chatId] = (firstName, lastName);
-            IniConfig.Write("Admins", chatId.ToString(), $"{chatId}:{firstName}:{lastName}");
+            Admins.Add(chatId);
+            var existingAdmins = IniConfig.Read("Admins");
+
+            IniConfig.Write("Admins", $"{chatId}; {existingAdmins}");
         }
     }
 }

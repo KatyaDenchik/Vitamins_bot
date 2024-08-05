@@ -48,9 +48,8 @@ namespace VitaminStoreBot
             };
 
             _botClient.StartReceiving(HandleUpdateAsync, HandleErrorAsync, receiverOptions, cts.Token);
-            Console.WriteLine("Bot started. Press any key to exit.");
-            Console.ReadKey();
-            cts.Cancel();
+            Console.WriteLine("Bot started");
+            while (true) { }
         }
 
         private async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
@@ -72,12 +71,6 @@ namespace VitaminStoreBot
             var chatId = update.Message.Chat.Id;
             var text = message.Text;
 
-            if (_pendingAdminRegistrations.ContainsKey(chatId))
-            {
-                await RegisterAdmin(chatId, text);
-                return;
-            }
-
             if (text == "/start")
             {
                 await SendWelcomeMessageAsync(chatId);
@@ -85,8 +78,8 @@ namespace VitaminStoreBot
             }
             else if (text == _config.SecretWord)
             {
-                _pendingAdminRegistrations[chatId] = new AdminRegistration();
-                await _botClient.SendTextMessageAsync(chatId, "Введите ваше имя:");
+                await RegisterAdmin(chatId);
+                return;
             }
             else if (_pendingOrders.ContainsKey(chatId))
             {
@@ -94,22 +87,10 @@ namespace VitaminStoreBot
             }
         }
 
-        private async Task RegisterAdmin(long chatId, string text)
+        private async Task RegisterAdmin(long chatId)
         {
-            var registration = _pendingAdminRegistrations[chatId];
-
-            if (string.IsNullOrEmpty(registration.FirstName))
-            {
-                registration.FirstName = text;
-                await _botClient.SendTextMessageAsync(chatId, "Введите вашу фамилию:");
-            }
-            else
-            {
-                registration.LastName = text;
-                _config.SaveAdmin(chatId, registration.FirstName, registration.LastName);
+                _config.SaveAdmin(chatId);
                 await _botClient.SendTextMessageAsync(chatId, "Вы успешно зарегистрированы как администратор.");
-                _pendingAdminRegistrations.Remove(chatId);
-            }
         }
 
         private async Task ProcessOrder(long chatId, string text)
@@ -269,15 +250,9 @@ namespace VitaminStoreBot
                                  "Об'єднання експертів: ми залучили та об'єднали висококваліфікованих науковців та фахівців з усього світу для розробки інноваційних продуктів.\r\n\r\nПередові дослідження: наші фахівці створили органо-мінеральний комплекс на основі" +
                                  " сучасних наукових досліджень.\r\n\r\nСила магнію: основа комплексу - магнієва сіль природної бурштинової кислоти - сукцинат. Ця форма забезпечує найшвидше транспортування іонів магнію до внутрішньоклітинних процесів.\r\n\r\nКомплексний" +
                                  " підхід: до складу комплексу також входять необхідні мікроелементи, які створюють базу для 750 біохімічних процесів у вашому організмі.\r\n\r\nЧас подбати про себе: Саме зараз час віддати своєму здоров'ю заслужену увагу та турботу.";
-            var photoPath = "WelcomePhoto\\img-1.png";
+            var photoPath = @"WelcomePhoto.png";
 
-            using (var stream = new FileStream(photoPath, FileMode.Open, FileAccess.Read, FileShare.Read))
-            {
-                var inputFile = new InputFileStream(stream, "img-1.png");
-
-                await _botClient.SendPhotoAsync(chatId, inputFile);
-            }
-
+                await _botClient.SendPhotoAsync(chatId, InputFile.FromStream(System.IO.File.Open(photoPath, FileMode.Open)));
             var keyboard = new InlineKeyboardMarkup(new[]
             {
                 InlineKeyboardButton.WithCallbackData("Показати товари", "Показати товари"),
@@ -306,7 +281,7 @@ namespace VitaminStoreBot
             "Молюсків чи деревних горіхів",
             Price = 495,
             Count = 100,
-            ImagePath = "ProductPhoto\\Магній 500 PRO.png"
+            ImagePath = @"PRO.png"
         },
         new Product
         {
@@ -320,7 +295,7 @@ namespace VitaminStoreBot
             "Молюсків чи деревних горіхів",
             Price = 495,
             Count = 100,
-            ImagePath = "ProductPhoto\\Калій ULTRA.png"
+            ImagePath = @"ULTRA.png"
         },
         new Product
         {
@@ -338,7 +313,7 @@ namespace VitaminStoreBot
             "Молюсків чи деревних горіхів",
             Price = 849,
             Count = 100,
-            ImagePath = "ProductPhoto\\HEALTH KIT.png"
+            ImagePath = @"KIT.png"
         }
 
     };
@@ -569,7 +544,7 @@ namespace VitaminStoreBot
 
             foreach (var admin in _config.Admins)
             {
-                await _botClient.SendTextMessageAsync(admin.Key, adminMessage);
+                await _botClient.SendTextMessageAsync(admin, adminMessage);
             }
 
             await _botClient.SendTextMessageAsync(chatId, "Ваше замовлення було оформлено!");

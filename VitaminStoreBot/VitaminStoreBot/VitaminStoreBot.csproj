@@ -13,16 +13,22 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="ProductPhoto\HEALTH KIT.png">
+    <None Update=".dockerignore">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="ProductPhoto\Калій ULTRA.png">
+    <None Update="Dockerfile">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="ProductPhoto\Магній 500 PRO.png">
+    <None Update="KIT.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="WelcomePhoto\img-1.png">
+    <None Update="ULTRA.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="PRO.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="WelcomePhoto.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
